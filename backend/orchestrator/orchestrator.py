@@ -87,6 +87,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from backend.mcp_common.client import MCPClient
+from backend.storage import database
 
 
 # Constants
@@ -500,16 +501,22 @@ def handle(session_id: str, text: str, video_path: str) -> dict:
 
     effective_video = state["video_path"]
 
-    # Record the user's turn in conversation history.
+    # Record the user's turn in in-memory history and persist to SQLite.
     _record_turn(state, "user", text)
+    database.save_message(session_id, "user", text)
 
     try:
         response = _dispatch(state, text, effective_video)
     except Exception as exc:
         response = _reply(f"Sorry, something went wrong: {exc}")
 
-    # Record the assistant's reply.
+    # Record the assistant's reply in memory and persist to SQLite.
+    # artifact_path is saved so the frontend can re-surface generated files
+    # when history is rehydrated after a restart.
     _record_turn(state, "assistant", response["reply"])
+    database.save_message(
+        session_id, "assistant", response["reply"], response["artifact_path"]
+    )
     return response
 
 
@@ -622,7 +629,8 @@ def _reply(text: str) -> dict:
 
 
 def shutdown() -> None:
-    """Shut down all MCP server subprocesses. Call before the gRPC server exits."""
+    """Shut down all MCP server subprocesses and close the database connection."""
     for client in _clients.values():
         client.shutdown()
     _clients.clear()
+    database.close()
