@@ -76,7 +76,7 @@ User types "summarize the video"
 | `orchestrator.py` | Intent classification, routing, session state, clarification logic |
 | `transcription_server.py` | Speech-to-text via faster-whisper (MCP server, stdio JSON-RPC) |
 | `vision_server.py` | Object detection (YOLOv8n/OpenVINO) + OCR/graph detection (EasyOCR) |
-| `summarization_server.py` | Extractive summarization via LexRank (sumy + NLTK) |
+| `summarization_server.py` | Summarization via Llama 3.2 1B LLM (default) or LexRank extractive (sumy + NLTK) |
 | `generation_server.py` | PDF (fpdf2) and PPTX (python-pptx) file generation |
 | `database.py` | SQLite read/write for chat history and session persistence |
 | `mcp_common/server.py` | Base MCP server: stdio JSON-RPC read-dispatch-reply loop |
@@ -96,11 +96,18 @@ each server's JSON-RPC interface, not its internals. A server can be restarted,
 swapped, or upgraded without touching the orchestrator. This is the MCP stdio
 transport spec.
 
-**Why extractive summarization?**
-LexRank selects real sentences from the transcript - no model download, no GPU,
-fully deterministic, always grammatically correct. The interface is clean enough
-that a generative LLM could replace the implementation without changing any
-caller.
+**Why extractive summarization**
+LexRank selects real sentences from the transcript. Therefore there is no model download and no GPU.
+It is also fully deterministic, and always grammatically correct (dependent on video and transcript).
+It remains available as an explicit user option ("extractive summary"). The default backend is Llama 3.2 1B
+Instruct (Q4_K_M GGUF, ~800 MB) running via llama-cpp-python with `n_gpu_layers=0`
+(CPU-only). 
+
+**Why local LLM summarization**
+The LLM produces synthesised, natural-language summaries rather than
+verbatim sentence extraction, at the cost of a larger one-time download and a ~20s first-call model
+load. Both backends share the same `summarize()` tool interface so the orchestrator
+requires no changes to use either.
 
 **Why keyword-based intent classification?**
 Transparent and defensible: every routing decision can be explained line by line.
@@ -130,7 +137,9 @@ data while still ranking clarification options sensibly.
   /src-tauri          - Rust core (lib.rs, build.rs, Cargo.toml, proto/)
 /models               - gitignored; populated by download_models.py
 /outputs              - gitignored; generated PDFs and PPTX files
-/samples              - sample mp4, sample_queries.md, sample outputs
+/samples              - sample mp4s, sample_queries.md
+/sample_outputs       - examples of query outputs
+/ui_images            - snapshots of UI
 /docs                 - ARCHITECTURE.md, SETUP.md, WRITEUP.md, BUILD_LOG.md
 download_models.py
 requirements.txt
