@@ -13,6 +13,7 @@ __pycache__/
 *.pyo
 .venv/
 venv/
+venv_test/
 *.egg-info/
 dist/
 build/
@@ -28,7 +29,7 @@ frontend/dist/
 frontend/build/
 frontend/src-tauri/target/
 
-# Generated outputs (PDF/PPTX — not committed; regenerated on demand)
+# Generated outputs (PDF/PPTX not committed; regenerated on demand)
 outputs/
 
 # SQLite databases
