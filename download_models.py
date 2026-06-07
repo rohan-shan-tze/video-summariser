@@ -13,7 +13,7 @@ def download_whisper():
     from faster_whisper import WhisperModel
     whisper_dir = MODELS_DIR / "whisper"
     whisper_dir.mkdir(exist_ok=True)
-    # device="cpu" and compute_type="int8" are the committed defaults — GPU-free.
+    # device="cpu" and compute_type="int8" are the committed defaults, GPU-free.
     # download_root forces the cache into our models/ dir rather than ~/.cache
     WhisperModel("base", device="cpu", compute_type="int8",
                  download_root=str(whisper_dir))
@@ -83,12 +83,51 @@ def download_easyocr():
     print("[easyocr] Done.")
 
 
+def download_llm():
+    """
+    Download Llama 3.2 1B Instruct Q4_K_M GGUF from Hugging Face.
+
+    Model: bartowski/Llama-3.2-1B-Instruct-GGUF
+    Quantisation: Q4_K_M (~800 MB) - good balance of quality and RAM usage.
+    Runs on CPU only via llama-cpp-python. No GPU required.
+
+    The GGUF is downloaded with a direct HTTP request (no git-lfs needed).
+    """
+    llm_dir  = MODELS_DIR / "llm"
+    llm_dir.mkdir(exist_ok=True)
+    llm_path = llm_dir / "Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+
+    if llm_path.exists():
+        print(f"[llm] Model already exists at {llm_path}, skipping download.")
+        return
+
+    url = (
+        "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF"
+        "/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+    )
+    print(f"[llm] Downloading Llama 3.2 1B Q4_K_M (~800 MB) ...")
+    import requests
+    with requests.get(url, stream=True) as r:
+        r.raise_for_status()
+        total    = int(r.headers.get("content-length", 0))
+        done     = 0
+        with open(llm_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=1024 * 1024):
+                f.write(chunk)
+                done += len(chunk)
+                if total:
+                    pct = done * 100 // total
+                    print(f"\r[llm] {pct}% ({done // 1024 // 1024} MB / {total // 1024 // 1024} MB)", end="", flush=True)
+    print(f"\n[llm] Done. Saved to {llm_path}")
+
+
 if __name__ == "__main__":
     print(f"Models will be stored in: {MODELS_DIR.resolve()}")
-    print("Estimated total download: ~300 MB (whisper ~150 MB, YOLOv8n ~6 MB pt + ~12 MB ONNX, EasyOCR ~100 MB)\n")
+    print("Estimated total download: ~1.1 GB (whisper ~150 MB, YOLOv8n ~18 MB, EasyOCR ~100 MB, LLM ~800 MB)\n")
 
     download_whisper()
     download_openvino_model()
     download_easyocr()
+    download_llm()
 
     print("\nAll models downloaded. The app is now fully offline.")

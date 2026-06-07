@@ -56,6 +56,35 @@ class VideoServiceServicer(video_pb2_grpc.VideoServiceServicer):
             artifact_path=response["artifact_path"],
         )
 
+    def GetHistory(self, request: video_pb2.HistoryRequest,
+                   context: grpc.ServicerContext) -> video_pb2.HistoryResponse:
+        from backend.storage import database
+        rows = database.get_history(request.session_id)
+        messages = [
+            video_pb2.HistoryMessage(
+                role=row["role"],
+                text=row["text"],
+                artifact_path=row["artifact_path"],
+                timestamp=row["timestamp"],
+            )
+            for row in rows
+        ]
+        return video_pb2.HistoryResponse(messages=messages)
+
+    def ListSessions(self, request: video_pb2.ListSessionsRequest,
+                     context: grpc.ServicerContext) -> video_pb2.ListSessionsResponse:
+        from backend.storage import database
+        rows = database.list_sessions()
+        sessions = [
+            video_pb2.SessionInfo(
+                session_id=row["session_id"],
+                created_at=row["created_at"],
+                video_path=row["video_path"],
+            )
+            for row in rows
+        ]
+        return video_pb2.ListSessionsResponse(sessions=sessions)
+
 
 def serve(port: int = _DEFAULT_PORT) -> None:
     server = grpc.server(

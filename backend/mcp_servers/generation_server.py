@@ -120,6 +120,7 @@ def make_pptx(title: str, slides: list) -> dict:
     from pptx import Presentation
     from pptx.util import Inches, Pt
     from pptx.dml.color import RGBColor
+    from pptx.enum.text import PP_ALIGN
 
     prs = Presentation()
     # Widescreen 16:9
@@ -133,10 +134,23 @@ def make_pptx(title: str, slides: list) -> dict:
 
     # --- Title slide ---
     title_slide = prs.slides.add_slide(title_layout)
-    title_slide.shapes.title.text = title
+    # Stretch the title placeholder to full slide width so centering works.
+    title_ph = title_slide.shapes.title
+    title_ph.left   = Inches(0)
+    title_ph.top    = Inches(2.5)
+    title_ph.width  = prs.slide_width
+    title_ph.text   = title
+    for para in title_ph.text_frame.paragraphs:
+        para.alignment = PP_ALIGN.CENTER
     # Subtitle placeholder (index 1) may not exist on all themes; guard it.
     if len(title_slide.placeholders) > 1:
-        title_slide.placeholders[1].text = datetime.now().strftime("%Y-%m-%d")
+        sub_ph = title_slide.placeholders[1]
+        sub_ph.left  = Inches(0)
+        sub_ph.top   = Inches(3.5)
+        sub_ph.width = prs.slide_width
+        sub_ph.text  = datetime.now().strftime("%Y-%m-%d")
+        for para in sub_ph.text_frame.paragraphs:
+            para.alignment = PP_ALIGN.CENTER
 
     # --- Content slides ---
     for slide_data in slides:
@@ -144,7 +158,13 @@ def make_pptx(title: str, slides: list) -> dict:
         bullets = slide_data.get("bullets", [])
 
         slide = prs.slides.add_slide(content_layout)
-        slide.shapes.title.text = heading
+        title_shape = slide.shapes.title
+        title_shape.left  = Inches(0)
+        title_shape.top   = Inches(0.4)
+        title_shape.width = prs.slide_width
+        title_shape.text  = heading
+        for para in title_shape.text_frame.paragraphs:
+            para.alignment = PP_ALIGN.CENTER
 
         # The body placeholder (index 1) holds the bullet text frame.
         body = slide.placeholders[1]

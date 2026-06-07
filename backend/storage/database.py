@@ -52,7 +52,8 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS sessions (
                 session_id  TEXT PRIMARY KEY,
-                created_at  TEXT NOT NULL
+                created_at  TEXT NOT NULL,
+                video_path  TEXT NOT NULL DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS messages (
@@ -68,6 +69,11 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             CREATE INDEX IF NOT EXISTS idx_messages_session
                 ON messages (session_id, id);
         """)
+    # Migrate existing databases that predate the video_path column.
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
+    if "video_path" not in cols:
+        with conn:
+            conn.execute("ALTER TABLE sessions ADD COLUMN video_path TEXT NOT NULL DEFAULT ''")
 
 
 def _now() -> str:
@@ -76,6 +82,16 @@ def _now() -> str:
 
 
 # Public write API
+
+def update_session_video(session_id: str, video_path: str) -> None:
+    """Persist the most recent video path used in a session."""
+    with _lock:
+        conn = _get_conn()
+        with conn:
+            conn.execute(
+                "UPDATE sessions SET video_path = ? WHERE session_id = ?",
+                (video_path, session_id),
+            )
 
 def ensure_session(session_id: str) -> None:
     """
@@ -139,13 +155,13 @@ def get_history(session_id: str) -> list[dict]:
 def list_sessions() -> list[dict]:
     """
     Return all sessions ordered by creation time, most recent first.
-    Each dict has: session_id, created_at.
+    Each dict has: session_id, created_at, video_path.
     Used by the frontend on startup to populate the session list.
     """
     with _lock:
         conn = _get_conn()
         rows = conn.execute(
-            "SELECT session_id, created_at FROM sessions ORDER BY created_at DESC"
+            "SELECT session_id, created_at, video_path FROM sessions ORDER BY created_at DESC"
         ).fetchall()
     return [dict(row) for row in rows]
 

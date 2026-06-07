@@ -81,6 +81,7 @@ When we ask for clarification:
      If it doesn't, we classify the new message fresh (user may have rephrased).
 """
 
+import logging
 import sys
 from pathlib import Path
 
@@ -123,7 +124,9 @@ _INTENT_RULES = [
     (
         "summarize",
         {"summarize", "summarise", "summary", "summarization", "key takeaways", "main points"},
-        {"key points", "overview", "recap", "brief", "short", "condense", "highlights"},
+        # "extractive" is a weak keyword so it alone doesn't route - but combined with
+        # any summarise strong keyword it signals the user wants the LexRank backend.
+        {"key points", "overview", "recap", "brief", "short", "condense", "highlights", "extractive"},
     ),
     (
         "generate_pdf",
@@ -346,7 +349,8 @@ def _handle_transcribe(state: dict, video_path: str | None) -> dict:
     result = _get_client("transcription").call("transcribe", video_path=video_path)
     state["transcript"] = result["text"]
     state["segments"]   = result["segments"]
-    return _reply(f"Transcript:\n\n{result['text']}")
+    word_count = len(result["text"].split())
+    return _reply(f"Transcript:\n\n{result['text']}\n\n({word_count} words)")
 
 
 def _handle_vision_objects(state: dict, video_path: str | None) -> dict:
@@ -396,9 +400,31 @@ def _handle_vision_text_graph(state: dict, video_path: str | None) -> dict:
     return _reply(f"{graph_line}\n\n{text_line}")
 
 
-def _handle_summarize(state: dict, video_path: str | None, mode: str = "brief") -> dict:
+def _pick_summarize_mode(text: str) -> str:
+    """
+    Choose the summarization backend from the user's message text.
+
+    Rules:
+      - "extractive" anywhere -> use LexRank (fast, deterministic)
+      - "detailed" anywhere   -> use LLM detailed (5 points)
+      - default               -> LLM brief (3 points)
+
+    This is intentionally simple - keyword presence is sufficient because the
+    user explicitly chose a mode by typing a specific word.
+    """
+    lowered = text.lower()
+    if "extractive" in lowered:
+        return "detailed" if "detailed" in lowered else "brief"
+    if "detailed" in lowered:
+        return "llm_detailed"
+    return "llm_brief"
+
+
+def _handle_summarize(state: dict, video_path: str | None, user_text: str = "") -> dict:
     if not video_path:
         return _reply("Please select a video file first.")
+
+    mode = _pick_summarize_mode(user_text)
 
     # Summarization requires a transcript. Get one (from cache or fresh).
     if state["transcript"] is None:
@@ -407,29 +433,36 @@ def _handle_summarize(state: dict, video_path: str | None, mode: str = "brief") 
         state["segments"]   = trans_result["segments"]
 
     if not state["transcript"].strip():
-        return _reply("The transcript appears to be empty — no speech was detected.")
+        return _reply("The transcript appears to be empty - no speech was detected.")
 
-    # Use cached summary if available and mode matches.
-    if state["summary"] is not None:
-        s = state["summary"]
+    # Cache the summary, but invalidate if the mode changed since last time.
+    # (e.g. user asked for LLM summary then asks for extractive - must rerun.)
+    cached = state["summary"]
+    if cached is not None and cached.get("_mode") == mode:
+        s = cached
     else:
         s = _get_client("summarization").call(
             "summarize", text=state["transcript"], mode=mode
         )
+        s["_mode"] = mode  # tag so we can detect a mode change next call
         state["summary"] = s
 
     key_points = s.get("key_points", [])
     summary    = s.get("summary", "")
+    method     = s.get("method", "")
 
+    method_label = "(LLM)" if method == "llm" else "(extractive)"
     kp_lines = "\n".join(f"  {i+1}. {pt}" for i, pt in enumerate(key_points))
-    return _reply(f"Key points:\n{kp_lines}\n\nSummary:\n{summary}")
+    return _reply(f"Summary {method_label}:\n\nKey points:\n{kp_lines}\n\nSummary:\n{summary}")
 
 
-def _handle_generate(state: dict, video_path: str | None, fmt: str) -> dict:
+def _handle_generate(state: dict, video_path: str | None, fmt: str, user_text: str = "") -> dict:
     """
     Multi-step chain: transcribe (if needed) -> summarize (if needed) -> generate file.
 
     fmt is "pdf" or "pptx".
+    Uses the same mode selection as _handle_summarize so "extractive" in the
+    user's message also affects what goes into the generated document.
     """
     if not video_path:
         return _reply("Please select a video file first.")
@@ -441,13 +474,22 @@ def _handle_generate(state: dict, video_path: str | None, fmt: str) -> dict:
         state["segments"]   = trans_result["segments"]
 
     if not state["transcript"].strip():
-        return _reply("The transcript appears to be empty — no speech was detected.")
+        return _reply("The transcript appears to be empty - no speech was detected.")
 
-    # Step 2: ensure we have a summary.
-    if state["summary"] is None:
-        state["summary"] = _get_client("summarization").call(
-            "summarize", text=state["transcript"], mode="detailed"
+    # Step 2: ensure we have a summary, respecting the user's mode preference.
+    # Always use the "detailed" variant for documents (more content = better doc).
+    mode = _pick_summarize_mode(user_text)
+    detail_mode = "detailed" if mode == "brief" else "llm_detailed" if mode == "llm_brief" else mode
+
+    cached = state["summary"]
+    if cached is not None and cached.get("_mode") == detail_mode:
+        pass  # reuse cached summary
+    else:
+        s = _get_client("summarization").call(
+            "summarize", text=state["transcript"], mode=detail_mode
         )
+        s["_mode"] = detail_mode
+        state["summary"] = s
 
     s = state["summary"]
 
@@ -516,6 +558,7 @@ def handle(session_id: str, text: str, video_path: str) -> dict:
         if state["video_path"] and state["video_path"] != video_path:
             _invalidate_cache(state)
         state["video_path"] = video_path
+        database.update_session_video(session_id, video_path)
 
     effective_video = state["video_path"]
 
@@ -526,6 +569,7 @@ def handle(session_id: str, text: str, video_path: str) -> dict:
     try:
         response = _dispatch(state, text, effective_video)
     except Exception as exc:
+        logging.exception("dispatch error")
         response = _reply(f"Sorry, something went wrong: {exc}")
 
     # Record the assistant's reply in memory and persist to SQLite.
@@ -552,7 +596,7 @@ def _dispatch(state: dict, text: str, video_path: str | None) -> dict:
     # If the last response asked the user to choose, check their reply first.
     resolved_intent = _resolve_clarification(state, text)
     if resolved_intent:
-        return _route(state, resolved_intent, video_path)
+        return _route(state, resolved_intent, video_path, text)
 
     # Step 2: fresh classification.
     scores = _classify(text)
@@ -563,10 +607,10 @@ def _dispatch(state: dict, text: str, video_path: str | None) -> dict:
         return _build_clarification(scores, state)
 
     # Step 4: route.
-    return _route(state, intent, video_path)
+    return _route(state, intent, video_path, text)
 
 
-def _route(state: dict, intent: str, video_path: str | None) -> dict:
+def _route(state: dict, intent: str, video_path: str | None, user_text: str = "") -> dict:
     """Map a resolved intent to the appropriate handler."""
     if intent == "transcribe":
         return _handle_transcribe(state, video_path)
@@ -575,11 +619,11 @@ def _route(state: dict, intent: str, video_path: str | None) -> dict:
     elif intent == "vision_text_graph":
         return _handle_vision_text_graph(state, video_path)
     elif intent == "summarize":
-        return _handle_summarize(state, video_path)
+        return _handle_summarize(state, video_path, user_text)
     elif intent == "generate_pdf":
-        return _handle_generate(state, video_path, fmt="pdf")
+        return _handle_generate(state, video_path, fmt="pdf", user_text=user_text)
     elif intent == "generate_pptx":
-        return _handle_generate(state, video_path, fmt="pptx")
+        return _handle_generate(state, video_path, fmt="pptx", user_text=user_text)
     else:
         return _reply(
             "I'm not sure what you'd like me to do. Try: "

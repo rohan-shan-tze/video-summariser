@@ -6,6 +6,8 @@ package video;
 // The Rust core (Tauri) holds a client to this; React never speaks gRPC directly.
 service VideoService {
   rpc SendMessage (ChatRequest) returns (ChatResponse);
+  rpc GetHistory  (HistoryRequest) returns (HistoryResponse);
+  rpc ListSessions (ListSessionsRequest) returns (ListSessionsResponse);
 }
 
 // Every turn from the frontend carries these fields.
@@ -30,4 +32,31 @@ message ChatResponse {
   bool   needs_clarification = 2;
   repeated string options    = 3;
   string artifact_path       = 4;
+}
+
+message HistoryRequest {
+  string session_id = 1;
+}
+
+message HistoryMessage {
+  string role          = 1;
+  string text          = 2;
+  string artifact_path = 3;
+  string timestamp     = 4;
+}
+
+message HistoryResponse {
+  repeated HistoryMessage messages = 1;
+}
+
+message ListSessionsRequest {}
+
+message SessionInfo {
+  string session_id  = 1;
+  string created_at  = 2;
+  string video_path  = 3;
+}
+
+message ListSessionsResponse {
+  repeated SessionInfo sessions = 1;
 }
