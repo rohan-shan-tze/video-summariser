@@ -1,0 +1,44 @@
+# Models (never commit)
+models/
+*.pt
+*.bin
+*.gguf
+*.onnx
+*.xml
+*.mapping
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# gRPC generated files
+backend/proto/*_pb2.py
+backend/proto/*_pb2_grpc.py
+
+# Tauri / Node
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/src-tauri/target/
+
+# SQLite databases
+*.db
+*.sqlite
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# PyInstaller
+*.spec
