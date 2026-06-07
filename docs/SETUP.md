@@ -161,14 +161,13 @@ it to open the file with your default application.
 
 ## 8. Sample video and queries
 
-A sample `.mp4` and the five spec queries are in `samples/`:
+A sample `.mp4`s and five spec queries are in `samples/`:
 
 ```
 samples/
   psychology-lecture.mp4   - MIT OCW Introduction to Psychology excerpt
+  law-lecture.mp4          - Emerson Stafford Equal Protection Lecture excerpt
   sample_queries.md        - all five spec queries with expected behaviour
-  sample_output.pdf        - generated from query 5
-  sample_output.pptx       - generated from query 2
 ```
 
 ---
@@ -207,6 +206,7 @@ samples/
 /outputs          - generated PDFs and PPTX files (gitignored)
 /samples          - sample videos
 /sample_outputs   - example outputs 
+/ui-images        - snapshots of the UI
 /docs             - this file + ARCHITECTURE.md + WRITEUP.md + BUILD_LOG.md
 download_models.py
 requirements.txt
