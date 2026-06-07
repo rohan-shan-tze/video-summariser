@@ -122,20 +122,31 @@ _INTENT_RULES = [
     ),
     (
         "summarize",
-        {"summarize", "summarise", "summary", "summarization", "key points", "key takeaways", "main points"},
-        {"overview", "recap", "brief", "short", "condense", "highlights"},
+        {"summarize", "summarise", "summary", "summarization", "key takeaways", "main points"},
+        {"key points", "overview", "recap", "brief", "short", "condense", "highlights"},
     ),
     (
         "generate_pdf",
         {"pdf", "PDF"},
-        {"report", "document", "file", "generate", "create", "make", "export"},
+        {"report", "document", "generate", "create", "make", "export"},
     ),
     (
         "generate_pptx",
-        {"pptx", "powerpoint", "presentation", "slides", "slide deck"},
-        {"deck", "keynote"},
+        # "create" and "powerpoint" together cover "Create a PowerPoint..."
+        {"pptx", "powerpoint", "presentation", "slide deck", "slideshow"},
+        {"deck", "keynote", "slides"},
     ),
 ]
+
+# When multiple strong intents fire together, generation takes priority over
+# summarize because generation already chains through summarization internally.
+# e.g. "summarize and generate a PDF" should route to generate_pdf, not ask.
+_GENERATION_OVERRIDES = {
+    ("summarize", "generate_pdf"):  "generate_pdf",
+    ("generate_pdf", "summarize"):  "generate_pdf",
+    ("summarize", "generate_pptx"): "generate_pptx",
+    ("generate_pptx", "summarize"): "generate_pptx",
+}
 
 
 # Intent classification
@@ -195,8 +206,15 @@ def _pick_intent(scores: list[tuple[str, float]]) -> tuple[str, float]:
 
     top_intent, top_conf = scores[0]
 
-    # Two or more intents with equal top confidence and both strong -> ask.
+    # Two or more intents tied at 1.0 - check if there is a known override
+    # before falling back to asking for clarification.
+    # e.g. "summarize and generate a PDF" fires both summarize and generate_pdf
+    # at 1.0; the override table resolves it to generate_pdf without asking,
+    # because generate_pdf already chains through summarization internally.
     if len(scores) > 1 and scores[1][1] == top_conf == 1.0:
+        pair = (scores[0][0], scores[1][0])
+        if pair in _GENERATION_OVERRIDES:
+            return _GENERATION_OVERRIDES[pair], 1.0
         return "ambiguous", top_conf
 
     if top_conf < _CLARIFICATION_THRESHOLD:
@@ -481,10 +499,10 @@ def handle(session_id: str, text: str, video_path: str) -> dict:
     Process one chat turn. Called by the gRPC server for every SendMessage RPC.
 
     Returns a dict matching the ChatResponse proto fields:
-      reply               str   — text to display in the chat bubble
-      needs_clarification bool  — True if we need the user to pick an option
-      options             list  — clarification choices (empty if not clarifying)
-      artifact_path       str   — path to generated file, or "" if none
+      reply               str   text to display in the chat bubble
+      needs_clarification bool  True if we need the user to pick an option
+      options             list  clarification choices (empty if not clarifying)
+      artifact_path       str   path to generated file, or "" if none
 
     Never raises. All exceptions become error reply strings so the gRPC server
     always has a valid response to send.
@@ -592,7 +610,7 @@ def _build_clarification(scores: list[tuple[str, float]], state: dict) -> dict:
         options = [labels[intent] for intent, _ in scores[:3] if intent in labels]
         reply = "I'm not quite sure what you'd like. Did you mean:"
     else:
-        # No match at all — give full menu.
+        # No match at all, give full menu.
         options = list(labels.values())
         reply = "I can help with any of the following:"
 
