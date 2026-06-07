@@ -28,6 +28,9 @@ frontend/dist/
 frontend/build/
 frontend/src-tauri/target/
 
+# Generated outputs (PDF/PPTX — not committed; regenerated on demand)
+outputs/
+
 # SQLite databases
 *.db
 *.sqlite

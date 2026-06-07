@@ -1,0 +1,31 @@
+# gRPC
+grpcio==1.81.0
+grpcio-tools==1.81.0
+protobuf==6.33.6
+
+# Transcription
+faster-whisper==1.1.1
+av==17.0.1          # used by faster-whisper for audio decode when system ffmpeg absent
+requests==2.32.3    # indirect dep of faster-whisper/huggingface-hub
+
+# Vision
+openvino==2025.2.0
+opencv-python==4.10.0.84
+easyocr==1.7.1
+# Model setup (one-time, not needed at runtime):
+#   pip install ultralytics==8.4.60
+#   python download_models.py
+# ultralytics exports YOLOv8n to ONNX; ovc (bundled in openvino) converts to IR.
+
+# Generation
+python-pptx==0.6.23
+reportlab==4.2.2
+fpdf2==2.7.9
+
+# Extractive summarization (no model download required)
+sumy==0.11.0
+nltk==3.8.1
+
+# Utilities
+numpy==1.26.4
+Pillow==10.3.0
