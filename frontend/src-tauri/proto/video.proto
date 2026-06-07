@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package video;
+
+// The single service the Python gRPC server exposes.
+// The Rust core (Tauri) holds a client to this; React never speaks gRPC directly.
+service VideoService {
+  rpc SendMessage (ChatRequest) returns (ChatResponse);
+}
+
+// Every turn from the frontend carries these fields.
+// session_id   groups turns into a conversation; SQLite keyed on this.
+// text         the user's natural-language query.
+// video_path   absolute path to the selected .mp4 on the local filesystem.
+//                Empty string if no video has been selected yet.
+message ChatRequest {
+  string session_id  = 1;
+  string text        = 2;
+  string video_path  = 3;
+}
+
+// The backend's reply for one turn.
+// reply               the text to render in the chat bubble.
+// needs_clarification true when the orchestrator wants the user to disambiguate.
+// options            the choices to present when needs_clarification is true
+//                      (e.g. ["Transcribe the audio", "Summarize the discussion"]).
+// artifact_path      local path to a generated PDF or PPTX, empty otherwise.
+message ChatResponse {
+  string reply               = 1;
+  bool   needs_clarification = 2;
+  repeated string options    = 3;
+  string artifact_path       = 4;
+}
