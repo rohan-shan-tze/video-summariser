@@ -25,7 +25,8 @@ fpdf2==2.7.9
 # Summarization - extractive (no model) + LLM backend
 sumy==0.11.0
 nltk==3.8.1
-llama-cpp-python==0.3.4   # CPU-only build; no CUDA, no Metal
+# llama-cpp-python: install separately with the pre-built CPU wheel (see below)
+# pip install llama-cpp-python==0.3.4 --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
 
 # Utilities
 numpy==1.26.4
