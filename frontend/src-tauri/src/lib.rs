@@ -25,6 +25,23 @@ pub struct ChatResponse {
     pub artifact_path: String,
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryMessage {
+    pub role: String,
+    pub text: String,
+    pub artifact_path: String,
+    pub timestamp: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionInfo {
+    pub session_id: String,
+    pub created_at: String,
+    pub video_path: String,
+}
+
 // send_message is a Tauri command: React calls invoke("send_message", {...})
 // and gets back a ChatResponse (or an error string).
 //
@@ -65,6 +82,63 @@ async fn send_message(
     })
 }
 
+// get_history fetches all persisted messages for a session from the Python backend.
+// Called on app startup so prior conversations can be re-rendered in the UI.
+#[tauri::command]
+async fn get_history(session_id: String) -> Result<Vec<HistoryMessage>, String> {
+    use video_proto::HistoryRequest;
+
+    let mut client = VideoServiceClient::connect(GRPC_ADDR)
+        .await
+        .map_err(|e| format!("Could not connect to backend: {e}"))?;
+
+    let request = tonic::Request::new(HistoryRequest { session_id });
+    let response = client
+        .get_history(request)
+        .await
+        .map_err(|e| format!("gRPC error: {e}"))?
+        .into_inner();
+
+    Ok(response
+        .messages
+        .into_iter()
+        .map(|m| HistoryMessage {
+            role: m.role,
+            text: m.text,
+            artifact_path: m.artifact_path,
+            timestamp: m.timestamp,
+        })
+        .collect())
+}
+
+// list_sessions returns all past sessions ordered by creation time (newest first).
+// Used to populate a session picker so the user can resume a prior conversation.
+#[tauri::command]
+async fn list_sessions() -> Result<Vec<SessionInfo>, String> {
+    use video_proto::ListSessionsRequest;
+
+    let mut client = VideoServiceClient::connect(GRPC_ADDR)
+        .await
+        .map_err(|e| format!("Could not connect to backend: {e}"))?;
+
+    let request = tonic::Request::new(ListSessionsRequest {});
+    let response = client
+        .list_sessions(request)
+        .await
+        .map_err(|e| format!("gRPC error: {e}"))?
+        .into_inner();
+
+    Ok(response
+        .sessions
+        .into_iter()
+        .map(|s| SessionInfo {
+            session_id: s.session_id,
+            created_at: s.created_at,
+            video_path: s.video_path,
+        })
+        .collect())
+}
+
 // open_file_dialog opens a native OS file picker filtered to .mp4 files.
 // Returns the selected path as a string, or an empty string if cancelled.
 #[tauri::command]
@@ -81,21 +155,12 @@ async fn open_file_dialog(app: tauri::AppHandle) -> String {
     }
 }
 
-// get_history fetches persisted chat history for a session directly from
-// the Python backend via gRPC. For Phase 7 we seed it on app startup so
-// prior conversations are visible when the app reopens.
-// (History is stored in SQLite by the orchestrator; the gRPC server exposes
-// it via the same SendMessage RPC — the frontend just sends a special text
-// "__get_history__" which is handled as a no-op placeholder until Phase 8.)
-// For now history rehydration is done client-side from localStorage as a
-// lightweight fallback; full DB rehydration is Phase 8 scope.
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![send_message, open_file_dialog])
+        .invoke_handler(tauri::generate_handler![send_message, open_file_dialog, get_history, list_sessions])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
